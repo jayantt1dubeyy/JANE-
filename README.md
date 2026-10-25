@@ -3,6 +3,9 @@
 ![Solved](https://img.shields.io/badge/status-solved-brightgreen)
 ![Key](https://img.shields.io/badge/key-121%20bits-blue)
 ![Cells](https://img.shields.io/badge/cells-728-orange)
+
+
+> 🐼 New here? Start with the [beginner explainer](EXPLAINED_FOR_BEGINNERS.md) — what the chip is, in plain language, without needing the 121-bit key.
 ![Methods](https://img.shields.io/badge/methods-4%20independent-purple)
 ![Flag](https://img.shields.io/badge/flag-%28%2A%20TWO%20STARS%20%2A%29-yellow)
 

@@ -1,0 +1,7 @@
+Warmup validation, reproduced 25 Oct 2026 (compare2.py, INTRA=1, FLAT=0):
+  FLAT=False INTRA=True | top pins: ['A', 'B', 'S', 'VGND', 'VPWR', 'clk', 'en', 'rst_n']
+  | top nets: 89 | my nets: 84 gt nets: 84 | cellmatch: True | SIG EQUAL: True
+Command:
+  INTRA=1 FLAT=0 python3 compare2.py ../../warmup/04_final.gds ../../warmup/01_netlist.v
+Note: the same script with INTRA=0 fragments the warmup into 1,642 nets with
+singleton nets; the intra-layer connects are the fix (see LVS_REPORT.md).

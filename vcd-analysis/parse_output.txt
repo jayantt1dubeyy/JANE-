@@ -1,0 +1,58 @@
+clk: first rise 5000 ps, 312 rising edges, period(s) [10000] ps = [10.0] ns
+clk: falls at [0, 10000, 20000] ... (every 10 ns)
+
+rst_n transitions (time ps -> value): [(0, '0'), (30000, '1'), (1560000, '0'), (1590000, '1')]
+  reset pulse 0..30000 ps = 30.0 ns, covers 3 rising edges
+  reset pulse 1560000..1590000 ps = 30.0 ns, covers 3 rising edges
+
+enable transitions (time ps -> value): [(0, '0'), (40000, '1'), (1250000, '0'), (1600000, '1'), (2810000, '0')]
+
+=== enable window 1: 40000..1250000 ps (1210.0 ns), 121 rising edges, 121 I bits ===
+I bitstream (time order, 1 bit per rising edge):
+0010101000000010110000101001100000000010000001110110000100101100001110011000000010110000001011100000000010000011001110000
+  ones=38 zeros=83
+  as bytes (msb-first): [42, 2, 194, 152, 2, 7, 97, 44, 57, 128, 176, 46, 0, 131, 56]
+  as text  (msb-first): '*.....a,9.....8'
+  as bytes (lsb-first): [84, 64, 67, 25, 64, 224, 134, 52, 156, 1, 13, 116, 0, 193, 28]
+  as text  (lsb-first): 'T@C.@..4...t...'
+  O stream after window (edge time ps -> binary -> int -> char):
+    1255000 ps: 1010100 = 84 'T'
+    1265000 ps: 1010010 = 82 'R'
+    1275000 ps: 1011001 = 89 'Y'
+    1285000 ps: 100000 = 32 ' '
+    1295000 ps: 1000001 = 65 'A'
+    1305000 ps: 1000111 = 71 'G'
+    1315000 ps: 1000001 = 65 'A'
+    1325000 ps: 1001001 = 73 'I'
+    1335000 ps: 1001110 = 78 'N'
+    1345000 ps: 0 = 0 ''
+  success during window: ['0'], during O stream: ['0']
+
+=== enable window 2: 1600000..2810000 ps (1210.0 ns), 121 rising edges, 121 I bits ===
+I bitstream (time order, 1 bit per rising edge):
+1101011000010011110000000001000001000011000011101110000100001100001001011000000101110000110011100000000010000000000100000
+  ones=38 zeros=83
+  as bytes (msb-first): [214, 19, 192, 16, 67, 14, 225, 12, 37, 129, 112, 206, 0, 128, 16]
+  as text  (msb-first): '....C...%.p....'
+  as bytes (lsb-first): [107, 200, 3, 8, 194, 112, 135, 48, 164, 129, 14, 115, 0, 1, 8]
+  as text  (lsb-first): 'k....p.0...s...'
+  O stream after window (edge time ps -> binary -> int -> char):
+    2815000 ps: 1010100 = 84 'T'
+    2825000 ps: 1010010 = 82 'R'
+    2835000 ps: 1011001 = 89 'Y'
+    2845000 ps: 100000 = 32 ' '
+    2855000 ps: 1000001 = 65 'A'
+    2865000 ps: 1000111 = 71 'G'
+    2875000 ps: 1000001 = 65 'A'
+    2885000 ps: 1001001 = 73 'I'
+    2895000 ps: 1001110 = 78 'N'
+    2905000 ps: 0 = 0 ''
+  success during window: ['0'], during O stream: ['0']
+
+success values seen anywhere in file: ['0', 'x']
+total rising edges: 312, first 5000 ps, last 3115000 ps (3115.0 ns)
+
+window1 bits == window2 bits? False
+  differing bit positions: [0, 1, 2, 3, 4, 5, 11, 15, 22, 24, 28, 33, 39, 44, 47, 48, 58, 67, 68, 69, 79, 80, 81, 88, 89, 90, 110, 111, 114, 116]
+
+I changes at 89 times; not on a 10 ns grid: none

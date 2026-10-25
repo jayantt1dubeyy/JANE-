@@ -1,0 +1,108 @@
+import pya, re, sys, json, collections
+
+def V(obj, name):
+    """get attribute or call no-arg method"""
+    a = getattr(obj, name)
+    return a() if callable(a) else a
+
+# ---------- 1. KLayout extraction ----------
+path = sys.argv[1]
+ly = pya.Layout(); ly.read(path)
+top = ly.top_cell()
+layers_all = [ly.layer(a,b) for a,b in [(67,20),(67,44),(67,5),(68,20),(68,44),(68,5),(69,20),(69,44),(70,20),(70,44),(70,5),(71,20),(71,44),(71,5),(72,20),(72,5)]]
+l2n = pya.LayoutToNetlist(pya.RecursiveShapeIterator(ly, top, layers_all))
+l2n.threads = 4
+def P(a,b): return l2n.make_polygon_layer(ly.layer(a,b))
+def T(a,b): return l2n.make_text_layer(ly.layer(a,b))
+li1=P(67,20); mcon=P(67,44); met1=P(68,20); via1=P(68,44); met2=P(69,20); via2=P(69,44)
+met3=P(70,20); via3=P(70,44); met4=P(71,20); via4=P(71,44); met5=P(72,20)
+for a,b in [(li1,mcon),(mcon,met1),(met1,via1),(via1,met2),(met2,via2),(via2,met3),(met3,via3),(via3,met4),(met4,via4),(via4,met5)]:
+    l2n.connect(a,b)
+l2n.connect(li1,T(67,5)); l2n.connect(met1,T(68,5)); l2n.connect(met3,T(70,5)); l2n.connect(met4,T(71,5)); l2n.connect(met5,T(72,5))
+l2n.extract_netlist()
+nl = l2n.netlist()
+nl.make_top_level_pins()
+topc = nl.top_circuit()
+
+POWER = {"VPWR","VGND","VPB","VNB"}
+SKIP_CELL = lambda n: n.startswith("VIA") or "tapvpwrvgnd" in n or "decap" in n
+
+# my nets: net_index -> set of (celltype, pin) + port markers
+my_nets = {}
+my_celltypes = collections.Counter()
+top_port_net = {}   # port name -> net index
+for i, net in enumerate(topc.each_net()):
+    my_nets[i] = set()
+for i, net in enumerate(topc.each_net()):
+    for sp in net.each_subcircuit_pin():
+        sc = V(sp, "subcircuit"); pin = V(sp, "pin")
+        ctype = V(V(sc, "circuit_ref"), "name")
+        if SKIP_CELL(ctype):
+            continue
+        my_nets[i].add((ctype, V(pin, "name")))
+    for p in net.each_pin():
+        my_nets[i].add(("PORT", V(V(p, "pin"), "name")))
+for sc in topc.each_subcircuit():
+    ctype = V(V(sc, "circuit_ref"), "name")
+    if SKIP_CELL(ctype):
+        continue
+    my_celltypes[ctype] += 1
+# drop power pins and empty nets
+my_sigs = collections.Counter()
+for i, s in my_nets.items():
+    s2 = frozenset(x for x in s if x[1] not in POWER)
+    if s2:
+        my_sigs[s2] += 1
+
+# ---------- 2. Ground truth parse ----------
+gt_text = open(sys.argv[2]).read()
+# strip comments
+gt_text = re.sub(r'//.*', '', gt_text)
+inst_pat = re.compile(r'(sky130_fd_sc_hd__\w+)\s+(\S+)\s*\((.*?)\)\s*;', re.DOTALL)
+gt_celltypes = collections.Counter()
+gt_nets = collections.defaultdict(set)   # wire -> set of (celltype, pin)
+def norm_net(n):
+    n = n.strip()
+    if n.startswith("\\"):
+        n = n[1:]
+    return n.strip()
+for m in inst_pat.finditer(gt_text):
+    ctype, inst, ports = m.group(1), m.group(2), m.group(3)
+    if "tapvpwrvgnd" in ctype or "decap" in ctype:
+        continue
+    gt_celltypes[ctype] += 1
+    for pm in re.finditer(r'\.(\w+)\s*\(\s*([^)]*?)\s*\)', ports):
+        pin, net = pm.group(1), norm_net(pm.group(2))
+        if not net:
+            continue
+        gt_nets[net].add((ctype, pin))
+# top ports: module port list
+mod = re.search(r'module\s+adder_demo\s*\((.*?)\)\s*;', gt_text, re.DOTALL).group(1)
+gt_ports = [x.strip() for x in mod.split(",")]
+for p in gt_ports:
+    if p in gt_nets:
+        gt_nets[p].add(("PORT", p))
+gt_sigs = collections.Counter()
+for net, s in gt_nets.items():
+    s2 = frozenset(x for x in s if x[1] not in POWER)
+    if s2:
+        gt_sigs[s2] += 1
+
+print("== CELL TYPE COUNTS ==")
+print("mine:", dict(my_celltypes), "total", sum(my_celltypes.values()))
+print("gt  :", dict(gt_celltypes), "total", sum(gt_celltypes.values()))
+print("celltype match:", dict(my_celltypes) == dict(gt_celltypes))
+print()
+print("== NET SIGNATURES ==")
+print("my nets (nonempty):", sum(my_sigs.values()), " gt nets:", sum(gt_sigs.values()))
+print("signature multisets equal:", my_sigs == gt_sigs)
+if my_sigs != gt_sigs:
+    only_mine = my_sigs - gt_sigs
+    only_gt = gt_sigs - my_sigs
+    print("only in MINE (%d distinct, %d total):" % (len(only_mine), sum(only_mine.values())))
+    for s, c in list(only_mine.items())[:25]:
+        print("   x%d" % c, sorted(s))
+    print("only in GT (%d distinct, %d total):" % (len(only_gt), sum(only_gt.values())))
+    for s, c in list(only_gt.items())[:25]:
+        print("   x%d" % c, sorted(s))
+json.dump({"my_celltypes": dict(my_celltypes), "gt_celltypes": dict(gt_celltypes)}, open("/tmp/lvs/warmup_compare.json","w"), indent=1)

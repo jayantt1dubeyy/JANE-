@@ -1,0 +1,82 @@
+=== VERIFICATION LOG: Jane Street ASIC puzzle 2026 (independent reproduction) ===
+Date: 2026-10-25 (IST). All runs below are fresh executions of the scripts in this directory.
+
+--- 1. Warmup extraction (warmup/04_final.gds) ---
+via cuts: 4294 total, 4294 bridging both layers
+nets: 335
+instances: 79 pads: {'A': 96, 'B': 190, 'S': 265, 'clk': 182, 'en': 55, 'rst_n': 20}
+power nets: {'VPWR': [9], 'VGND': [0]}
+warnings: 0
+port directions: {'A': 'input', 'B': 'input', 'S': 'output', 'clk': 'input', 'en': 'input', 'rst_n': 'input'}
+wrote /tmp/wu2.v
+pin/model mismatches (excluding power pins): [] count: 0
+
+--- 2. Warmup behaviour check: S == 1 iff A + B == 496 ---
+A=241 B=255 sum=496 -> S=1 (expected 1)
+A=255 B=241 sum=496 -> S=1 (expected 1)
+A=200 B=255 sum=455 -> S=0 (expected 0)
+A=1 B=1 sum=2 -> S=0 (expected 0)
+A=0 B=0 sum=0 -> S=0 (expected 0)
+A=128 B=128 sum=256 -> S=0 (expected 0)
+
+--- 3. Puzzle extraction (puzzle.gds) ---
+via cuts: 33323 total, 33323 bridging both layers
+nets: 2626
+instances: 728 pads: {'I': 271, 'O[0]': 158, 'O[1]': 150, 'O[2]': 159, 'O[3]': 57, 'O[4]': 162, 'O[5]': 189, 'O[6]': 44, 'O[7]': 186, 'clk': 670, 'enable': 1130, 'rst_n': 5, 'success': 66}
+power nets: {'VPWR': [2], 'VGND': [0]}
+warnings: 0
+port directions: {'I': 'input', 'O': 'output', 'clk': 'input', 'enable': 'input', 'rst_n': 'input', 'success': 'output'}
+wrote ./puzzle_extracted.v
+pin/model mismatches (excluding power pins): [] count: 0
+
+--- 4. Golden check: extracted puzzle netlist vs example_inputs.vcd ---
+input rst_n changes on edge timestamps: 0
+input enable changes on edge timestamps: 0
+input I changes on edge timestamps: 0
+edges checked: 312 mismatches: 0
+O streams decoded: ['TRY AGAIN', 'TRY AGAIN']
+VERDICT: PASS
+
+--- 5. Edge cases (concrete simulation) ---
+streamed text: 'EMPTY SKY'
+success asserted during stream: False
+streamed text: 'BIG BANG'
+success asserted during stream: False
+
+--- 6. Z3 solve (undriven net = 0) ---
+circuit: 636 comb, 92 FF, undriven: [1793]
+unrolled 141 cycles in 15.6s
+solve: sat in 0.1s
+key: 0000000101010000100000000000010101010000000000001010000001000001000000100000101000010000000100000010000010010001010000000
+uniqueness check (expect unsat): unsat in 0.0s
+RESULT key = 0000000101010000100000000000010101010000000000001010000001000001000000100000101000010000000100000010000010010001010000000
+
+--- 7. Z3 solve sensitivity (undriven net = 1) ---
+solve: sat in 0.1s
+key: 0000000101010000100000000000010101010000000000001010000001000001000000100000101000010000000100000010000010010001010000000
+uniqueness check (expect unsat): unsat in 0.0s
+RESULT key = 0000000101010000100000000000010101010000000000001010000001000001000000100000101000010000000100000010000010010001010000000
+
+--- 8. Winning key: concrete re-simulation ---
+125: 1 0x28 '('
+126: 1 0x2a '*'
+127: 1 0x20 ' '
+128: 1 0x54 'T'
+129: 1 0x57 'W'
+130: 1 0x4f 'O'
+131: 1 0x20 ' '
+132: 1 0x53 'S'
+133: 1 0x54 'T'
+134: 1 0x41 'A'
+135: 1 0x52 'R'
+136: 1 0x53 'S'
+137: 1 0x20 ' '
+138: 1 0x2a '*'
+139: 1 0x29 ')'
+140: 1 0x00 '.'
+streamed text: '(* TWO STARS *)'
+success asserted during stream: True
+
+--- 9. Winning key with undriven net = 1 ---
+streamed text: '(* TWO STARS *)'
+success asserted during stream: True

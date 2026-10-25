@@ -1,0 +1,303 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jane Street ASIC 2026 — Interactive 3D Chip Viewer</title>
+<style>
+  html,body{margin:0;height:100%;overflow:hidden;background:#0b0f14;color:#e6edf3;
+    font-family:system-ui,-apple-system,Segoe UI,Roboto,Arial,sans-serif}
+  #app{position:fixed;inset:0}
+  #panel{position:fixed;top:12px;left:12px;z-index:10;background:rgba(13,17,23,.88);
+    border:1px solid #30363d;border-radius:12px;padding:14px 16px;max-width:340px}
+  #panel h1{font-size:17px;margin:0 0 4px}
+  #panel p{font-size:13px;line-height:1.5;margin:6px 0;color:#b6c2cf}
+  #panel p b{color:#e6edf3}
+  .row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+  button,select{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:8px;
+    padding:7px 12px;font-size:13px;cursor:pointer}
+  button:hover{background:#30363d}
+  button.primary{background:#1f6feb;border-color:#1f6feb}
+  #status{font-size:13px;color:#7ee787;min-height:18px}
+  #tip{position:fixed;pointer-events:none;z-index:20;display:none;background:#161b22;
+    border:1px solid #30363d;border-radius:8px;padding:6px 9px;font-size:12px;max-width:280px}
+  .legend{display:flex;flex-wrap:wrap;gap:6px 12px;font-size:12px;color:#b6c2cf;margin-top:8px}
+  .sw{display:inline-block;width:10px;height:10px;border-radius:2px;margin-right:4px;vertical-align:-1px}
+  label{font-size:12px;color:#b6c2cf;display:flex;align-items:center;gap:6px}
+  #flag{position:fixed;left:50%;bottom:26px;transform:translateX(-50%);z-index:10;display:none;
+    background:rgba(13,17,23,.92);border:1px solid #3fb950;border-radius:12px;padding:12px 20px;
+    font-size:20px;letter-spacing:.5px;color:#7ee787;text-align:center}
+  #flag small{display:block;font-size:12px;color:#b6c2cf;margin-top:4px}
+  a{color:#58a6ff}
+</style>
+<script type="importmap">
+{"imports":{
+  "three":"https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+  "three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+}}
+</script>
+</head>
+<body>
+<div id="app"></div>
+<div id="panel">
+  <h1>ASIC Puzzle 2026 — 3D Chip Viewer</h1>
+  <p>All <b>728 logic cells</b> plotted at their <b>real placed coordinates</b> from the
+  KLayout LVS extraction of <code>puzzle.gds</code> (SkyWater 130&nbsp;nm, die
+  200&nbsp;&times;&nbsp;352.72&nbsp;&micro;m). Cell widths are stylised; rows are real.
+  Drag to orbit, scroll to zoom, hover a cell to identify it.</p>
+  <div class="row">
+    <button class="primary" id="play">▶ Play the winning key</button>
+    <button id="reset">Reset view</button>
+    <select id="filter">
+      <option value="all">All cells</option>
+      <option value="ff">Flip-flops only</option>
+      <option value="comb">Combinational only</option>
+      <option value="clk">Clock buffers only</option>
+    </select>
+  </div>
+  <div class="row">
+    <label><input type="checkbox" id="layers" checked> Metal stack planes</label>
+    <label><input type="checkbox" id="spin"> Auto-rotate</label>
+  </div>
+  <div id="status">Ready — press play to stream the 121-bit key.</div>
+  <div class="legend">
+    <span><i class="sw" style="background:#e67e22"></i>Flip-flop</span>
+    <span><i class="sw" style="background:#3498db"></i>NAND / NOR</span>
+    <span><i class="sw" style="background:#2ecc71"></i>AND / OR / XOR</span>
+    <span><i class="sw" style="background:#9b59b6"></i>AOI / complex</span>
+    <span><i class="sw" style="background:#f1c40f"></i>INV / BUF</span>
+    <span><i class="sw" style="background:#e74c3c"></i>Clock buffer</span>
+    <span><i class="sw" style="background:#95a5a6"></i>MUX / other</span>
+  </div>
+  <p>Protocol: 3-cycle reset → 1 idle cycle → 121 cycles of <code>enable</code> with one
+  key bit per cycle on <code>I</code> → <code>enable</code> low → <code>success</code> latches
+  high and <code>O[7:0]</code> streams the flag. Full writeup in the
+  <a href="https://github.com/jayantt1dubeyy/JANE-">repo README</a>.</p>
+</div>
+<div id="tip"></div>
+<div id="flag">(* TWO STARS *)<small>success = 1 · streamed on O[7:0], one byte per clock</small></div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+const CELLS = [[23.46,152.32,"and4bb_2"],[25.76,157.76,"nor2_2"],[26.22,103.36,"and4_2"],[26.22,152.32,"dfrtp_2"],[26.68,108.8,"a21o_2"],[27.14,103.36,"xor2_2"],[27.14,146.88,"and3_2"],[27.14,146.88,"and4_2"],[28.06,97.92,"and3_2"],[28.06,157.76,"a41oi_2"],[28.98,97.92,"a31o_2"],[28.98,97.92,"dfrtp_2"],[28.98,108.8,"dfrtp_2"],[28.98,141.44,"xor2_2"],[28.98,157.76,"dfrtp_2"],[28.98,163.2,"a221oi_2"],[29.9,92.48,"nor2_2"],[29.9,103.36,"nand3b_2"],[30.82,146.88,"dfrtp_2"],[30.82,206.72,"a31o_2"],[33.12,201.28,"and2b_2"],[33.58,108.8,"inv_2"],[33.58,108.8,"nand3_2"],[34.04,152.32,"a211oi_2"],[34.04,152.32,"xnor2_2"],[34.96,97.92,"o311a_2"],[35.88,146.88,"dfrtp_2"],[36.34,103.36,"o211a_2"],[39.56,152.32,"a21oi_2"],[39.56,201.28,"dfrtp_2"],[40.48,97.92,"mux2_1"],[40.94,97.92,"nand2_2"],[41.86,92.48,"dfrtp_2"],[42.78,103.36,"dfrtp_2"],[57.5,146.88,"clkbuf_4"],[65.32,146.88,"clkbuf_8"],[69.46,48.96,"nand2_2"],[70.38,108.8,"clkbuf_4"],[70.84,152.32,"and3_2"],[70.84,157.76,"a31o_2"],[71.3,43.52,"and2_2"],[71.3,43.52,"o21a_2"],[71.3,54.4,"a31o_2"],[72.22,48.96,"and3_2"],[72.22,48.96,"nor3_2"],[72.68,152.32,"a221o_2"],[72.68,152.32,"clkbuf_8"],[73.14,108.8,"clkbuf_8"],[73.6,43.52,"o21a_2"],[73.6,146.88,"mux2_1"],[74.52,48.96,"a31o_2"],[74.52,59.84,"and2b_2"],[74.52,141.44,"mux2_1"],[74.52,146.88,"mux2_1"],[74.52,152.32,"and4_2"],[74.98,38.08,"nand2_2"],[74.98,48.96,"nor2_2"],[74.98,146.88,"dfrtp_2"],[74.98,157.76,"and3_2"],[75.44,43.52,"inv_2"],[75.9,48.96,"dfrtp_2"],[75.9,103.36,"inv_2"],[75.9,152.32,"mux2_1"],[76.36,108.8,"nand2_2"],[76.82,43.52,"xnor2_2"],[76.82,103.36,"mux2_1"],[76.82,163.2,"dfrtp_2"],[77.28,38.08,"and4_2"],[77.28,97.92,"conb_1"],[77.28,103.36,"a22o_2"],[77.74,38.08,"dfrtp_2"],[77.74,54.4,"or3_2"],[77.74,141.44,"clkbuf_4"],[77.74,157.76,"and4_2"],[77.74,157.76,"dfrtp_2"],[77.74,157.76,"mux2_1"],[78.2,54.4,"and4_2"],[78.2,54.4,"xor2_2"],[78.66,108.8,"or4_2"],[79.12,27.2,"and3_2"],[79.12,108.8,"dfrtp_2"],[79.12,163.2,"mux2_1"],[79.12,163.2,"mux2_1"],[80.04,97.92,"inv_2"],[80.5,92.48,"inv_2"],[80.96,54.4,"a21oi_2"],[80.96,92.48,"dfrtp_2"],[80.96,103.36,"mux2_1"],[80.96,114.24,"or2_2"],[81.88,27.2,"and3_2"],[81.88,32.64,"and2b_2"],[81.88,48.96,"and4bb_2"],[81.88,48.96,"dfrtp_2"],[81.88,97.92,"a21oi_2"],[81.88,97.92,"dfrtp_2"],[81.88,136.0,"mux2_1"],[82.8,43.52,"dfrtp_2"],[82.8,59.84,"and3_2"],[82.8,141.44,"dfrtp_2"],[82.8,141.44,"mux2_1"],[83.26,76.16,"clkbuf_4"],[83.26,97.92,"a31o_2"],[83.72,21.76,"and4_2"],[84.18,54.4,"and2b_2"],[84.18,152.32,"dfrtp_2"],[84.18,152.32,"mux2_1"],[84.64,114.24,"clkbuf_4"],[84.64,146.88,"inv_2"],[85.1,103.36,"buf_2"],[85.1,146.88,"dfrtp_2"],[85.1,146.88,"dfrtp_2"],[85.56,27.2,"and4_2"],[85.56,103.36,"or4bb_2"],[85.56,108.8,"o211a_2"],[86.48,43.52,"dfrtp_2"],[86.48,141.44,"dfrtp_2"],[86.94,163.2,"a22o_2"],[87.4,59.84,"dfrtp_2"],[87.4,136.0,"dfrtp_2"],[87.4,152.32,"dfrtp_2"],[87.86,54.4,"and3_2"],[87.86,146.88,"mux2_1"],[87.86,152.32,"dfrtp_2"],[89.24,103.36,"inv_2"],[90.62,38.08,"dfrtp_2"],[90.62,54.4,"dfrtp_2"],[91.08,76.16,"clkbuf_8"],[91.54,136.0,"dfrtp_2"],[91.54,157.76,"dfrtp_2"],[92.0,48.96,"a32o_2"],[92.0,157.76,"mux2_1"],[93.38,43.52,"nor4b_2"],[93.84,108.8,"clkbuf_8"],[94.3,48.96,"and3_2"],[95.22,48.96,"a21o_2"],[97.52,70.72,"clkbuf_4"],[100.74,195.84,"clkbuf_4"],[100.74,201.28,"clkbuf_8"],[102.58,76.16,"clkbuf_8"],[104.88,163.2,"clkbuf_16"],[105.34,288.32,"o21a_2"],[108.1,206.72,"clkbuf_8"],[108.1,255.68,"o21a_2"],[108.1,282.88,"and2b_2"],[108.1,282.88,"nand2b_2"],[108.56,277.44,"and2_2"],[109.02,70.72,"nor2_2"],[109.02,233.92,"inv_2"],[109.02,233.92,"nand2b_2"],[109.48,92.48,"o21a_2"],[109.48,206.72,"and2_2"],[109.94,76.16,"a21o_2"],[109.94,76.16,"or4_2"],[109.94,81.6,"nand2b_2"],[109.94,212.16,"inv_2"],[109.94,233.92,"a21o_2"],[109.94,277.44,"a21o_2"],[110.4,217.6,"inv_2"],[110.86,92.48,"nand2_2"],[110.86,136.0,"o21a_2"],[111.32,70.72,"or4b_2"],[111.32,76.16,"and2b_2"],[111.78,65.28,"a21o_2"],[111.78,97.92,"and2_2"],[111.78,97.92,"o21a_2"],[111.78,146.88,"o21a_2"],[111.78,277.44,"nand2b_2"],[112.24,206.72,"clkbuf_4"],[112.7,59.84,"nand2_2"],[112.7,130.56,"a31o_2"],[112.7,141.44,"a31o_2"],[112.7,239.36,"and2b_2"],[113.16,65.28,"and2_2"],[113.16,70.72,"nand2_2"],[113.16,97.92,"a31o_2"],[113.16,130.56,"and2_2"],[113.16,136.0,"or4_2"],[113.16,141.44,"and2b_2"],[113.16,201.28,"nor2_2"],[113.16,201.28,"o21a_2"],[113.16,212.16,"a21o_2"],[113.16,212.16,"o21a_2"],[113.16,217.6,"and2_2"],[113.16,217.6,"nand2b_2"],[113.16,239.36,"and2_2"],[113.16,261.12,"and2b_2"],[113.16,282.88,"o21a_2"],[113.16,288.32,"nand4_2"],[113.62,136.0,"nand4_2"],[113.62,201.28,"or4b_2"],[113.62,233.92,"dfrtp_2"],[113.62,261.12,"dfrtp_2"],[113.62,272.0,"or4b_2"],[114.08,65.28,"dfrtp_2"],[114.08,125.12,"dfrtp_2"],[114.08,184.96,"dfrtp_2"],[114.08,201.28,"or4_2"],[114.08,217.6,"dfrtp_2"],[114.08,244.8,"dfrtp_2"],[114.08,266.56,"nor2_2"],[114.08,272.0,"dfrtp_2"],[114.08,272.0,"or4_2"],[114.54,250.24,"clkbuf_4"],[115.0,48.96,"dfrtp_2"],[115.0,48.96,"o21a_2"],[115.0,54.4,"a31o_2"],[115.0,59.84,"or4_2"],[115.0,70.72,"inv_2"],[115.0,76.16,"dfrtp_2"],[115.0,76.16,"inv_2"],[115.0,81.6,"and2_2"],[115.0,81.6,"dfrtp_2"],[115.0,92.48,"nand4_2"],[115.0,97.92,"dfrtp_2"],[115.0,103.36,"inv_2"],[115.0,125.12,"and4b_2"],[115.0,130.56,"inv_2"],[115.0,146.88,"dfrtp_2"],[115.92,76.16,"dfrtp_2"],[115.92,76.16,"nand4_2"],[115.92,87.04,"and4bb_2"],[115.92,87.04,"nor2_2"],[115.92,92.48,"a21o_2"],[115.92,92.48,"dfrtp_2"],[115.92,103.36,"and4bb_2"],[115.92,114.24,"dfrtp_2"],[115.92,114.24,"nand2b_2"],[115.92,130.56,"a21o_2"],[115.92,130.56,"and4bb_2"],[115.92,141.44,"and4bb_2"],[115.92,195.84,"nor4_2"],[115.92,206.72,"dfrtp_2"],[115.92,206.72,"or4b_2"],[115.92,212.16,"dfrtp_2"],[115.92,212.16,"nor2_2"],[115.92,223.04,"o21a_2"],[115.92,228.48,"dfrtp_2"],[115.92,228.48,"o21a_2"],[115.92,239.36,"dfrtp_2"],[115.92,239.36,"o21a_2"],[115.92,255.68,"dfrtp_2"],[115.92,255.68,"nand4_2"],[115.92,282.88,"and4bb_2"],[115.92,282.88,"dfrtp_2"],[115.92,282.88,"dfrtp_2"],[115.92,282.88,"inv_2"],[116.38,184.96,"dfrtp_2"],[116.38,184.96,"nand2b_2"],[116.38,217.6,"and2b_2"],[116.38,217.6,"dfrtp_2"],[116.38,244.8,"nand2b_2"],[116.38,277.44,"dfrtp_2"],[116.38,277.44,"nand4_2"],[116.84,103.36,"a31o_2"],[116.84,233.92,"and4bb_2"],[116.84,233.92,"nand4_2"],[117.3,261.12,"a31o_2"],[117.3,261.12,"nand2b_2"],[117.3,272.0,"o21a_2"],[118.22,48.96,"dfrtp_2"],[118.22,65.28,"o21a_2"],[118.22,70.72,"o21a_2"],[118.22,108.8,"nand4_2"],[118.22,146.88,"nand4_2"],[118.68,87.04,"clkbuf_8"],[118.68,87.04,"or4b_2"],[118.68,266.56,"nand2_2"],[119.14,114.24,"and2b_2"],[119.14,114.24,"nand2b_2"],[119.14,119.68,"a31o_2"],[119.14,119.68,"o21a_2"],[119.14,152.32,"and2b_2"],[119.14,152.32,"nand2b_2"],[119.14,190.4,"and2b_2"],[119.14,190.4,"o21a_2"],[119.14,250.24,"and2b_2"],[119.6,119.68,"nand4_2"],[119.6,201.28,"nand2_2"],[119.6,250.24,"clkbuf_8"],[120.06,43.52,"nand2b_2"],[120.06,103.36,"o21a_2"],[120.52,54.4,"nand4_2"],[120.52,59.84,"nor4_2"],[120.52,87.04,"or4_2"],[120.52,130.56,"o21a_2"],[120.52,190.4,"a31o_2"],[120.52,190.4,"nand4_2"],[120.52,201.28,"a21o_2"],[120.52,223.04,"a31o_2"],[120.52,223.04,"and4bb_2"],[120.52,223.04,"nand4_2"],[120.52,228.48,"or4b_2"],[120.52,255.68,"and4bb_2"],[120.52,255.68,"nand4_2"],[121.44,65.28,"nor2_2"],[121.44,65.28,"o21a_2"],[121.9,59.84,"or4b_2"],[122.36,250.24,"clkbuf_8"],[122.82,70.72,"and4bb_2"],[122.82,119.68,"and2b_2"],[122.82,212.16,"dfrtp_2"],[122.82,212.16,"or4_2"],[123.28,81.6,"dfrtp_2"],[123.28,97.92,"dfrtp_2"],[123.28,97.92,"dfrtp_2"],[123.28,103.36,"nand2b_2"],[123.28,206.72,"dfrtp_2"],[123.28,233.92,"or4_2"],[123.28,239.36,"a31o_2"],[123.28,239.36,"dfrtp_2"],[123.28,277.44,"dfrtp_2"],[123.28,288.32,"dfrtp_2"],[123.74,54.4,"and2b_2"],[123.74,87.04,"clkbuf_4"],[123.74,103.36,"and2b_2"],[123.74,136.0,"dfrtp_2"],[123.74,136.0,"nor2_2"],[123.74,233.92,"nor2_2"],[124.2,141.44,"or4b_2"],[124.66,70.72,"dfrtp_2"],[124.66,76.16,"a31o_2"],[124.66,108.8,"dfrtp_2"],[124.66,130.56,"dfrtp_2"],[124.66,141.44,"dfrtp_2"],[124.66,141.44,"nand2b_2"],[125.58,250.24,"a31o_2"],[125.58,282.88,"a31o_2"],[126.04,92.48,"clkbuf_4"],[126.04,92.48,"clkbuf_8"],[126.04,130.56,"nand2_2"],[126.04,217.6,"nand2_2"],[126.04,233.92,"nand2_2"],[126.04,244.8,"dfrtp_2"],[126.5,277.44,"and2b_2"],[126.5,282.88,"and4bb_2"],[126.5,288.32,"a31o_2"],[127.88,108.8,"dfrtp_2"],[127.88,136.0,"dfrtp_2"],[127.88,146.88,"dfrtp_2"],[127.88,250.24,"clkbuf_4"],[127.88,250.24,"o21a_2"],[129.26,255.68,"and4b_2"],[146.28,174.08,"clkbuf_4"],[146.28,223.04,"clkbuf_8"],[149.5,27.2,"nor2_2"],[150.42,27.2,"nor2_2"],[150.88,32.64,"nor2_2"],[151.34,179.52,"clkbuf_8"],[151.8,21.76,"nor2_2"],[151.8,184.96,"or2_2"],[152.26,16.32,"nor2_2"],[152.26,38.08,"nand2_2"],[153.18,32.64,"nand2_2"],[153.18,184.96,"nand2_2"],[153.18,184.96,"nor2_2"],[153.18,190.4,"and2b_2"],[153.18,190.4,"nor2_2"],[154.1,179.52,"inv_2"],[154.56,16.32,"or2_2"],[154.56,27.2,"nand2_2"],[154.56,27.2,"nand2_2"],[154.56,38.08,"and3_2"],[154.56,38.08,"nor2_2"],[155.02,27.2,"nand2_2"],[155.02,27.2,"nor2_2"],[155.02,190.4,"nand2_2"],[155.02,190.4,"nand2b_2"],[155.48,16.32,"nand2_2"],[155.48,21.76,"nand2_2"],[155.48,21.76,"nor2_2"],[155.48,32.64,"a21oi_2"],[155.48,32.64,"nand2_2"],[155.48,32.64,"nor2_2"],[156.4,21.76,"nor2_2"],[156.86,16.32,"nor2_2"],[156.86,27.2,"nand2_2"],[156.86,179.52,"clkbuf_8"],[156.86,179.52,"or3b_2"],[156.86,184.96,"a22o_2"],[156.86,184.96,"xnor2_2"],[156.86,228.48,"clkbuf_8"],[157.32,38.08,"a21oi_2"],[157.32,195.84,"a21o_2"],[157.32,195.84,"nor2_2"],[157.78,10.88,"or2_2"],[157.78,16.32,"nand2_2"],[157.78,16.32,"nor2_2"],[157.78,21.76,"or3_2"],[157.78,32.64,"a21o_2"],[157.78,38.08,"a21oi_2"],[157.78,38.08,"and2b_2"],[157.78,174.08,"a21oi_2"],[158.24,43.52,"nor2_2"],[158.24,179.52,"clkbuf_4"],[158.7,21.76,"and2_2"],[158.7,21.76,"or2_2"],[158.7,43.52,"nor2_2"],[158.7,184.96,"a31o_2"],[158.7,184.96,"xnor2_2"],[159.16,16.32,"nor2_2"],[159.16,27.2,"a21oi_2"],[159.16,174.08,"nor2_2"],[159.62,27.2,"nor2_2"],[159.62,223.04,"clkbuf_4"],[160.08,16.32,"nand2_2"],[160.54,38.08,"o22ai_2"],[160.54,190.4,"o221a_2"],[160.54,250.24,"o21ba_2"],[161.0,38.08,"a211o_2"],[161.0,43.52,"or3_2"],[161.0,174.08,"and3b_2"],[161.46,43.52,"a21oi_2"],[161.46,201.28,"a21o_2"],[161.92,27.2,"nor2_2"],[161.92,32.64,"a31o_2"],[161.92,32.64,"o311a_2"],[161.92,179.52,"a22o_2"],[161.92,190.4,"a22o_2"],[161.92,190.4,"xnor2_2"],[161.92,195.84,"and2b_2"],[162.38,10.88,"nor2_2"],[162.38,16.32,"nand2_2"],[162.38,27.2,"o211a_2"],[162.84,184.96,"xnor2_2"],[162.84,212.16,"nor2_2"],[163.3,250.24,"inv_2"],[163.76,21.76,"a32o_2"],[163.76,21.76,"and2b_2"],[163.76,43.52,"nand2b_2"],[164.22,168.64,"nand2_2"],[164.22,168.64,"or2_2"],[164.22,244.8,"a211oi_2"],[164.22,244.8,"inv_2"],[164.68,10.88,"nand2_2"],[164.68,16.32,"o21a_2"],[164.68,16.32,"o221a_2"],[164.68,21.76,"or4_2"],[164.68,27.2,"or3_2"],[164.68,32.64,"o211a_2"],[164.68,43.52,"a21o_2"],[164.68,48.96,"and3_2"],[164.68,174.08,"a31o_2"],[164.68,190.4,"o32a_2"],[164.68,195.84,"a221o_2"],[164.68,212.16,"or3_2"],[165.14,10.88,"and2_2"],[165.14,27.2,"and2_2"],[165.14,43.52,"xnor2_2"],[165.14,174.08,"xnor2_2"],[165.14,184.96,"xor2_2"],[165.14,195.84,"xnor2_2"],[165.14,217.6,"or3_2"],[165.14,223.04,"nor3_2"],[165.14,244.8,"o211a_2"],[165.14,250.24,"and3_2"],[165.14,255.68,"nor2_2"],[165.6,87.04,"and2_2"],[165.6,87.04,"conb_1"],[165.6,92.48,"nor2_2"],[165.6,130.56,"nor2_2"],[165.6,174.08,"inv_2"],[166.06,48.96,"nand2_2"],[166.06,92.48,"a21o_2"],[166.06,206.72,"or3_2"],[166.52,136.0,"and3b_2"],[166.52,136.0,"or2_2"],[166.52,168.64,"nor2_2"],[166.52,201.28,"nand2_2"],[166.52,282.88,"or2_2"],[166.98,43.52,"xnor2_2"],[166.98,87.04,"and2_2"],[166.98,174.08,"xnor2_2"],[166.98,190.4,"dfstp_2"],[166.98,201.28,"xor2_2"],[167.44,54.4,"nand2_2"],[167.44,54.4,"nor2_2"],[167.44,168.64,"nand2_2"],[167.9,10.88,"a311o_2"],[167.9,21.76,"xnor2_2"],[167.9,27.2,"xor2_2"],[167.9,92.48,"xnor2_2"],[167.9,130.56,"a21oi_2"],[167.9,146.88,"o21a_2"],[167.9,152.32,"and2b_2"],[167.9,179.52,"xnor2_2"],[167.9,190.4,"dfstp_2"],[167.9,195.84,"dfrtp_2"],[167.9,195.84,"xnor2_2"],[167.9,206.72,"nand2b_2"],[167.9,206.72,"or2_2"],[167.9,217.6,"a21oi_2"],[167.9,223.04,"a22o_2"],[167.9,250.24,"or4b_2"],[167.9,255.68,"a21o_2"],[167.9,272.0,"dfrtp_2"],[167.9,282.88,"dfrtp_2"],[168.36,87.04,"and2b_2"],[168.36,97.92,"and2_2"],[168.36,157.76,"conb_1"],[168.82,16.32,"xor2_2"],[168.82,54.4,"nor2_2"],[168.82,108.8,"conb_1"],[168.82,136.0,"mux2_1"],[168.82,179.52,"dfrtp_2"],[168.82,179.52,"o31a_2"],[168.82,206.72,"a22o_2"],[168.82,212.16,"a22o_2"],[168.82,212.16,"nor3b_2"],[168.82,239.36,"inv_2"],[168.82,244.8,"dfxtp_2"],[168.82,244.8,"xnor2_2"],[168.82,255.68,"nand3_2"],[168.82,277.44,"and4b_2"],[169.28,48.96,"a21oi_2"],[169.28,152.32,"and3_2"],[169.74,157.76,"nor2_2"],[169.74,163.2,"nand2_2"],[169.74,168.64,"and2b_2"],[169.74,250.24,"dfxtp_2"],[170.2,32.64,"o2bb2a_2"],[170.2,32.64,"xnor2_2"],[170.2,48.96,"o211a_2"],[170.2,48.96,"xnor2_2"],[170.2,97.92,"nand2_2"],[170.2,97.92,"o21bai_2"],[170.2,119.68,"a211oi_2"],[170.2,125.12,"conb_1"],[170.2,201.28,"a22o_2"],[170.2,201.28,"xor2_2"],[170.2,228.48,"a22o_2"],[170.2,228.48,"a22o_2"],[170.2,233.92,"a22o_2"],[170.2,277.44,"a32o_2"],[170.66,141.44,"conb_1"],[170.66,212.16,"a22o_2"],[171.12,16.32,"mux2_1"],[171.12,32.64,"xor2_2"],[171.12,32.64,"xor2_2"],[171.12,38.08,"xnor2_2"],[171.12,38.08,"xnor2_2"],[171.12,38.08,"xor2_2"],[171.12,38.08,"xor2_2"],[171.12,43.52,"xor2_2"],[171.12,54.4,"and3_2"],[171.12,97.92,"o22a_2"],[171.12,114.24,"nor3_2"],[171.12,114.24,"nor4b_2"],[171.12,130.56,"a21oi_2"],[171.12,152.32,"nor3b_2"],[171.12,174.08,"xnor2_2"],[171.12,195.84,"or3_2"],[171.12,272.0,"and2_2"],[171.58,87.04,"o32ai_2"],[171.58,223.04,"o31a_2"],[172.04,21.76,"xnor2_2"],[172.04,21.76,"xnor2_2"],[172.04,27.2,"xor2_2"],[172.04,81.6,"and2b_2"],[172.04,103.36,"nor2_2"],[172.04,108.8,"a31o_2"],[172.04,108.8,"o22a_2"],[172.04,152.32,"a2111oi_2"],[172.04,157.76,"a21oi_2"],[172.04,163.2,"nor2_2"],[172.04,282.88,"dfrtp_2"],[172.04,282.88,"nand2b_2"],[172.5,157.76,"inv_2"],[172.5,206.72,"a22o_2"],[172.5,217.6,"a22o_2"],[172.5,217.6,"nor3b_2"],[172.5,217.6,"nor3b_2"],[172.5,217.6,"o31a_2"],[172.5,223.04,"o31a_2"],[172.5,223.04,"o31a_2"],[172.96,54.4,"a21o_2"],[172.96,87.04,"nand2b_2"],[172.96,87.04,"o31a_2"],[172.96,92.48,"and3b_2"],[172.96,168.64,"a21boi_2"],[172.96,168.64,"o32a_2"],[172.96,201.28,"dfstp_2"],[173.42,114.24,"and4b_2"],[173.42,114.24,"and4bb_2"],[173.42,212.16,"a22o_2"],[173.88,16.32,"and3_2"],[173.88,21.76,"a22o_2"],[173.88,136.0,"and3b_2"],[173.88,228.48,"a22o_2"],[173.88,228.48,"a22o_2"],[173.88,239.36,"and3_2"],[174.34,108.8,"a21o_2"],[174.34,130.56,"and2b_2"],[174.34,212.16,"a22o_2"],[174.34,212.16,"a22o_2"],[174.34,277.44,"inv_2"],[174.8,16.32,"or3_2"],[174.8,48.96,"o211a_2"],[174.8,48.96,"or3_2"],[174.8,119.68,"a211o_2"],[174.8,141.44,"o211a_2"],[174.8,146.88,"o211a_2"],[174.8,146.88,"o31a_2"],[174.8,184.96,"a211o_2"],[174.8,184.96,"dfrtp_2"],[174.8,184.96,"xnor2_2"],[174.8,244.8,"and3_2"],[174.8,261.12,"and2_2"],[175.26,130.56,"o221a_2"],[175.26,141.44,"o21a_2"],[175.26,223.04,"o31a_2"],[175.26,239.36,"a21boi_2"],[175.26,255.68,"a21boi_2"],[175.72,10.88,"o22a_2"],[175.72,250.24,"dfxtp_2"],[176.18,32.64,"inv_2"],[176.18,136.0,"o21ai_2"],[176.18,146.88,"inv_2"],[176.18,217.6,"o31a_2"],[176.18,223.04,"a22o_2"],[176.64,27.2,"and4bb_2"],[176.64,54.4,"o211a_2"],[176.64,108.8,"nor2_2"],[176.64,114.24,"a21oi_2"],[176.64,190.4,"xor2_2"],[176.64,244.8,"and3_2"],[176.64,255.68,"and3_2"],[176.64,255.68,"dfxtp_2"],[177.1,10.88,"inv_2"],[177.1,32.64,"xnor2_2"],[177.1,54.4,"o21ai_2"],[177.1,92.48,"nand2b_2"],[177.1,97.92,"nand2_2"],[177.1,136.0,"nand2_2"],[177.1,136.0,"nand2b_2"],[177.1,206.72,"xor2_2"],[177.1,277.44,"a32o_2"],[177.56,16.32,"a21oi_2"],[177.56,16.32,"o211a_2"],[177.56,43.52,"a221o_2"],[177.56,92.48,"a31oi_2"],[177.56,130.56,"and2b_2"],[177.56,146.88,"and3_2"],[177.56,168.64,"nor3b_2"],[177.56,179.52,"dfstp_2"],[177.56,184.96,"and3_2"],[177.56,228.48,"o31a_2"],[178.02,10.88,"o21a_2"],[178.02,21.76,"a32o_2"],[178.02,38.08,"o211ai_2"],[178.02,43.52,"mux2_1"],[178.02,92.48,"a21oi_2"],[178.02,97.92,"nor3_2"],[178.02,114.24,"or3_2"],[178.02,174.08,"xor2_2"],[178.02,195.84,"xnor2_2"],[178.02,212.16,"or3_2"],[178.02,217.6,"o31a_2"],[178.02,223.04,"a22o_2"],[178.02,244.8,"and3_2"],[178.94,152.32,"and2b_2"],[178.94,174.08,"o21ai_2"],[178.94,174.08,"xor2_2"],[179.4,206.72,"nor2_2"],[179.86,27.2,"xor2_2"],[179.86,48.96,"a211o_2"],[179.86,54.4,"o21ai_2"],[179.86,217.6,"or3_2"],[180.32,250.24,"and3_2"],[180.32,250.24,"nand4_2"],[180.78,16.32,"a31o_2"],[180.78,206.72,"or3_2"],[180.78,212.16,"or3_2"],[180.78,212.16,"or3_2"],[180.78,244.8,"and3_2"],[181.24,10.88,"nand2_2"],[181.24,38.08,"mux2_1"],[181.24,43.52,"o211a_2"],[181.24,43.52,"o32a_2"],[181.24,48.96,"o21ai_2"],[181.24,92.48,"nand2b_2"],[181.24,97.92,"nand2b_2"],[181.24,168.64,"o21ai_2"],[181.24,201.28,"a21oi_2"],[181.7,16.32,"a21bo_2"],[181.7,16.32,"o21a_2"],[181.7,92.48,"a311o_2"],[182.16,27.2,"mux2_1"],[182.16,27.2,"o21ba_2"],[182.16,43.52,"a21oi_2"],[182.16,250.24,"a21boi_2"],[182.62,21.76,"nand2b_2"],[182.62,21.76,"o31ai_2"],[182.62,32.64,"mux2_1"],[182.62,32.64,"o22ai_2"],[183.08,48.96,"a31o_2"],[183.08,48.96,"or2_2"],[183.54,195.84,"dfrtp_2"],[183.54,195.84,"o22a_2"],[184.0,174.08,"nor2_2"],[184.0,179.52,"a221o_2"],[184.0,179.52,"xnor2_2"],[184.0,184.96,"a22oi_2"],[184.0,184.96,"xnor2_2"],[184.0,190.4,"a221o_2"],[184.0,190.4,"xor2_2"],[184.46,27.2,"nand2_2"],[184.46,27.2,"o31ai_2"],[184.46,179.52,"and2b_2"],[184.46,179.52,"xnor2_2"],[184.46,184.96,"a221o_2"],[184.92,16.32,"or3_2"],[185.38,21.76,"o21a_2"],[185.38,38.08,"o32a_2"],[185.38,43.52,"and3_2"],[185.84,10.88,"nor2_2"],[185.84,10.88,"or2_2"],[185.84,21.76,"or3_2"],[185.84,27.2,"nand2_2"],[186.3,16.32,"nor2_2"],[186.3,16.32,"or2_2"],[186.3,38.08,"a21bo_2"],[186.3,38.08,"or2_2"],[186.76,32.64,"a211o_2"],[187.22,195.84,"o21a_2"],[187.68,21.76,"nor2_2"],[188.14,43.52,"a21o_2"],[188.6,38.08,"a21oi_2"],[188.6,190.4,"xor2_2"]];
+const KEY = "0000000101010000100000000000010101010000000000001010000001000001000000100000101000010000000100000010000010010001010000000";
+const DIE_W = 200, DIE_H = 352.72;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+document.getElementById('app').appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x0b0f14);
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.1, 2000);
+camera.position.set(0, -260, 260);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.update();
+
+// Die substrate (centred)
+const die = new THREE.Mesh(
+  new THREE.BoxGeometry(DIE_W, DIE_H, 2),
+  new THREE.MeshStandardMaterial({ color: 0x1c2333, roughness: 0.9 })
+);
+die.position.set(0, 0, -1);
+scene.add(die);
+const edge = new THREE.LineSegments(
+  new THREE.EdgesGeometry(new THREE.BoxGeometry(DIE_W, DIE_H, 2)),
+  new THREE.LineBasicMaterial({ color: 0x58a6ff })
+);
+edge.position.copy(die.position);
+scene.add(edge);
+
+function family(name) {
+  const n = name.toLowerCase();
+  if (n.includes('df')) return 'ff';
+  if (n.includes('clk')) return 'clk';
+  if (n.includes('mux')) return 'mux';
+  if (n.includes('xor') || n.includes('xnor')) return 'xor';
+  if (n.includes('nand') || n.includes('nor')) return 'nandnor';
+  if (n.includes('and') || n.includes('or')) return 'andor';
+  if (n.includes('inv') || n.includes('buf')) return 'invbuf';
+  if (/^[ao]/.test(n)) return 'aoi';
+  return 'other';
+}
+const COLORS = {
+  ff: 0xe67e22, clk: 0xe74c3c, mux: 0x95a5a6, xor: 0x2ecc71,
+  nandnor: 0x3498db, andor: 0x2ecc71, invbuf: 0xf1c40f, aoi: 0x9b59b6, other: 0x95a5a6
+};
+const FAM = { ff: 'flip-flop', clk: 'clock buffer', mux: 'mux', xor: 'xor/xnor',
+  nandnor: 'nand/nor', andor: 'and/or', invbuf: 'inv/buf', aoi: 'aoi complex', other: 'other' };
+
+// One box per cell, at real (x, y) — centred on the die
+const geo = new THREE.BoxGeometry(1.9, 2.6, 1.1);
+const mat = new THREE.MeshStandardMaterial({ roughness: 0.6, metalness: 0.1 });
+const mesh = new THREE.InstancedMesh(geo, mat, CELLS.length);
+const dummy = new THREE.Object3D();
+const col = new THREE.Color();
+CELLS.forEach((c, i) => {
+  dummy.position.set(c[0] - DIE_W / 2, c[1] - DIE_H / 2, 0.55);
+  dummy.updateMatrix();
+  mesh.setMatrixAt(i, dummy.matrix);
+  mesh.setColorAt(i, col.setHex(COLORS[family(c[2])]));
+});
+scene.add(mesh);
+
+// Metal stack planes (toggleable)
+const layerGroup = new THREE.Group();
+[['li1', 3, 0x8b949e], ['met1', 6, 0x58a6ff], ['met2', 9, 0x3fb950],
+ ['met3', 12, 0xd29922], ['met4', 15, 0xbc8cff], ['met5', 18, 0xf778ba]
+].forEach(([name, z, color]) => {
+  const p = new THREE.Mesh(
+    new THREE.PlaneGeometry(DIE_W, DIE_H),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.07, side: THREE.DoubleSide })
+  );
+  p.position.z = z;
+  layerGroup.add(p);
+});
+scene.add(layerGroup);
+
+// Pad markers along the top edge (schematic positions)
+function labelSprite(text, color = '#e6edf3') {
+  const cv = document.createElement('canvas');
+  const ctx = cv.getContext('2d');
+  ctx.font = 'bold 44px system-ui, sans-serif';
+  const w = Math.ceil(ctx.measureText(text).width) + 30;
+  cv.width = w; cv.height = 64;
+  const c2 = cv.getContext('2d');
+  c2.font = 'bold 44px system-ui, sans-serif';
+  c2.fillStyle = color; c2.fillText(text, 15, 45);
+  const tex = new THREE.CanvasTexture(cv);
+  const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, transparent: true, depthWrite: false }));
+  sp.scale.set(w / 4, 16, 1);
+  return sp;
+}
+const pads = ['clk', 'rst_n', 'enable', 'I', 'success', 'O[7:0]'];
+pads.forEach((p, i) => {
+  const x = -DIE_W / 2 + 18 + i * (DIE_W - 36) / (pads.length - 1);
+  const y = DIE_H / 2 + 8;
+  const m = new THREE.Mesh(
+    new THREE.BoxGeometry(7, 7, 2),
+    new THREE.MeshStandardMaterial({ color: p === 'success' ? 0x3fb950 : 0xd29922, emissive: 0x000000 })
+  );
+  m.position.set(x, y, 1);
+  m.userData.pad = p;
+  scene.add(m);
+  const s = labelSprite(p);
+  s.position.set(x, y + 14, 1);
+  scene.add(s);
+  if (p === 'success') m.userData.isSuccess = true;
+});
+const successPad = scene.children.find(o => o.userData && o.userData.isSuccess);
+
+// Hover identification
+const tip = document.getElementById('tip');
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let hovered = -1;
+renderer.domElement.addEventListener('pointermove', (e) => {
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObject(mesh)[0];
+  if (hit && hit.instanceId !== undefined) {
+    hovered = hit.instanceId;
+    const c = CELLS[hovered];
+    tip.style.display = 'block';
+    tip.style.left = (e.clientX + 14) + 'px';
+    tip.style.top = (e.clientY + 14) + 'px';
+    tip.innerHTML = '<b>sky130_fd_sc_hd__' + c[2] + '</b><br>' +
+      FAM[family(c[2])] + ' · x=' + c[0] + ' µm, y=' + c[1] + ' µm';
+  } else {
+    tip.style.display = 'none';
+  }
+});
+
+// Key-stream animation
+const status = document.getElementById('status');
+const flagEl = document.getElementById('flag');
+const bitGeo = new THREE.SphereGeometry(1.6, 12, 12);
+const bitMat1 = new THREE.MeshBasicMaterial({ color: 0x7ee787 });
+const bitMat0 = new THREE.MeshBasicMaterial({ color: 0x6e7681 });
+let anim = null;
+function playKey() {
+  if (anim) return;
+  flagEl.style.display = 'none';
+  if (successPad) successPad.material.emissive.setHex(0x000000);
+  const bits = [];
+  for (let i = 0; i < KEY.length; i++) {
+    const b = new THREE.Mesh(bitGeo, KEY[i] === '1' ? bitMat1 : bitMat0);
+    b.position.set(-DIE_W / 2 - 20, -DIE_H / 2, 4);
+    scene.add(b);
+    bits.push(b);
+  }
+  let t = 0;
+  anim = setInterval(() => {
+    t++;
+    bits.forEach((b, i) => {
+      const k = t - i * 2;
+      if (k < 0) { b.visible = false; return; }
+      b.visible = true;
+      // travel: left edge -> die centre, then sink
+      const p = Math.min(k / 90, 1);
+      b.position.set(-DIE_W / 2 - 20 + p * (DIE_W / 2 + 20), -DIE_H / 2 + p * 40, 4 + Math.sin(p * Math.PI) * 8);
+      if (p >= 1) b.visible = false;
+    });
+    const done = Math.min(t, KEY.length);
+    status.textContent = 'Streaming key… bit ' + done + ' / 121  (enable high, 1 bit per clock)';
+    if (t > KEY.length * 2 + 95) {
+      clearInterval(anim); anim = null;
+      bits.forEach(b => scene.remove(b));
+      if (successPad) successPad.material.emissive.setHex(0x2ea043);
+      flagEl.style.display = 'block';
+      status.textContent = 'success = 1 — key accepted. O[7:0] streams: (* TWO STARS *)';
+    }
+  }, 30);
+}
+document.getElementById('play').addEventListener('click', playKey);
+document.getElementById('reset').addEventListener('click', () => {
+  camera.position.set(0, -260, 260);
+  controls.target.set(0, 0, 0);
+  controls.update();
+});
+document.getElementById('layers').addEventListener('change', (e) => {
+  layerGroup.visible = e.target.checked;
+});
+document.getElementById('spin').addEventListener('change', (e) => {
+  controls.autoRotate = e.target.checked;
+  controls.autoRotateSpeed = 0.8;
+});
+document.getElementById('filter').addEventListener('change', (e) => {
+  const f = e.target.value;
+  CELLS.forEach((c, i) => {
+    const fam = family(c[2]);
+    const show = f === 'all' ||
+      (f === 'ff' && fam === 'ff') ||
+      (f === 'comb' && fam !== 'ff' && fam !== 'clk') ||
+      (f === 'clk' && fam === 'clk');
+    dummy.position.set(c[0] - DIE_W / 2, c[1] - DIE_H / 2, 0.55);
+    dummy.scale.setScalar(show ? 1 : 0.0001);
+    dummy.updateMatrix();
+    mesh.setMatrixAt(i, dummy.matrix);
+  });
+  mesh.instanceMatrix.needsUpdate = true;
+});
+
+const light = new THREE.DirectionalLight(0xffffff, 1.4);
+light.position.set(100, -100, 200);
+scene.add(light);
+scene.add(new THREE.AmbientLight(0x8899bb, 0.9));
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+(function loop() {
+  requestAnimationFrame(loop);
+  controls.update();
+  renderer.render(scene, camera);
+})();
+</script>
+</body>
+</html>

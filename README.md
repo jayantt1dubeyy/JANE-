@@ -1,6 +1,92 @@
 # Jane Street ASIC Reverse-Engineering Puzzle 2026 — Solution
 
-Independent reproduction (netlist extracted from `puzzle.gds`, simulated, key found by Z3). Jane Street submissions closed 4 September 2026; this is published after the close, as their post allows.
+![Solved](https://img.shields.io/badge/status-solved-brightgreen)
+![Key](https://img.shields.io/badge/key-121%20bits-blue)
+![Cells](https://img.shields.io/badge/cells-728-orange)
+![Methods](https://img.shields.io/badge/methods-4%20independent-purple)
+![Flag](https://img.shields.io/badge/flag-%28%2A%20TWO%20STARS%20%2A%29-yellow)
+
+Independent reproduction: the netlist was extracted from `puzzle.gds` by our own code,
+simulated with our own simulator built on the official SkyWater PDK primitive models, and
+the key was found by Z3 unrolling. Nothing was submitted to Jane Street or anywhere else.
+Jane Street submissions closed 4 September 2026; this is published after the close, as their post allows.
+
+## Interactive 3D chip viewer
+
+**[Open the interactive 3D viewer](https://jayantt1dubeyy.github.io/JANE-/3d-viewer.html)** —
+all 728 logic cells plotted at their real placed coordinates from the KLayout LVS extraction,
+with the metal stack, pads, hover-to-identify, and a playable animation of the winning 121-bit
+key streaming in and latching `success`. Cell widths are stylised; positions are real.
+(If the page is not live yet, enable Pages once in repo Settings → Pages → Branch: `main`.)
+
+[![Chip layout — click to open the 3D viewer](assets/layout.png)](https://jayantt1dubeyy.github.io/JANE-/3d-viewer.html)
+
+## What the chip does
+
+```mermaid
+flowchart LR
+    I["I — 1-bit serial input"] --> SM["Shift window + nonlinear state machine"]
+    SM --> CHK{"Key correct?"}
+    CHK -- Yes --> LAT["success latches high"]
+    LAT --> OG["Output generator"]
+    OG --> O["O[7:0] streams flag"]
+    CHK -- No --> ROM["TRY AGAIN ROM"]
+    ROM --> O
+```
+
+## How it was solved
+
+```mermaid
+flowchart TD
+    GDS["puzzle.gds — SkyWater 130 nm layout"] --> PARSE["GDS parse + polygon union (DSU + spatial hash)"]
+    PARSE --> NETS["741 nets · 728 cells · 2791 pins"]
+    NETS --> NL["Structural Verilog netlist"]
+    NL --> SIM["Cycle simulator (PDK models)"]
+    SIM --> VCD["Golden check: 312/312 example-VCD edges match"]
+    NL --> Z3["Z3 bounded-model-check over 141 cycles"]
+    Z3 --> KEY["121-bit key — proven unique"]
+    KEY --> RESIM["Re-simulation: success = 1, flag streams"]
+```
+
+## Protocol (one run)
+
+```mermaid
+sequenceDiagram
+    participant T as Tester
+    participant C as Chip
+    T->>C: rst_n = 0 for 3 clocks
+    T->>C: 1 idle clock (rst_n = 1, enable = 0)
+    loop 121 clocks
+        T->>C: enable = 1, I = next key bit
+    end
+    T->>C: enable = 0
+    C->>T: success = 1, O[7:0] streams one byte per clock
+```
+
+## The answer
+
+**121-bit key** (first bit = first bit on `I`):
+
+```
+0000000101010000100000000000010101010000000000001010000001000001000000100000101000010000000100000010000010010001010000000
+```
+
+**Flag output: `(* TWO STARS *)`** — plus easter eggs: all zeros streams `EMPTY SKY`,
+all ones streams `BIG BANG` (both with `success` low).
+
+## Files
+
+- `3d-viewer.html` — interactive 3D chip viewer (Three.js, real LVS placements)
+- `assets/layout.png` — the chip's physical layout
+- `puzzle_extracted.v` / `.json` — extracted structural netlist
+- `warmup_extracted.v` / `.json` — same, for the warmup design
+- `extract.py`, `cells.py`, `simulate.py`, `verify_vcd.py`, `run_protocol.py`, `solve_z3.py` — the toolchain
+- `verification_log.txt` — full logs of every verification run
+- `vcd-analysis/` — waveform-only protocol analysis
+- `lvs/` — KLayout's own LVS extraction + transistor spot-check (independent cross-check)
+- `brute-structural/` — brute-force + structural-tracing cross-check (warmup proven, puzzle key verified)
+
+---
 
 # Jane Street ASIC Reverse-Engineering Puzzle 2026 — Solution
 

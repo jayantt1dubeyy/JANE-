@@ -1,3 +1,7 @@
+![ASIC Puzzle header](https://capsule-render.vercel.app/api?type=waving&color=gradient&height=180&section=header&text=ASIC%20Puzzle%202026&fontSize=42&animation=fadeIn)
+
+![Typing](https://readme-typing-svg.demolab.com?font=Fira+Code&pause=1000&color=F472B6&width=650&lines=121-bit+key,+proven+unique.;728+cells,+extracted+from+GDS.;Solved,+not+submitted.)
+
 # Jane Street ASIC Reverse-Engineering Puzzle 2026 — Solution
 
 ![Solved](https://img.shields.io/badge/status-solved-brightgreen)
@@ -250,3 +254,39 @@ python3 run_protocol.py puzzle_extracted.json 0000000101010000100000000000010101
 - `sky130_cells/` — official per-cell functional models used.
 - `verification_log.txt` — full logs of every verification run above.
 - `SOLUTION.md` — this file.
+
+---
+
+## 🗺️ Project map
+
+```mermaid
+flowchart TD
+    GDS["puzzle.gds — SkyWater 130 nm layout"] --> EXT["extract.py + cells.py — GDS parse, DSU polygon union"]
+    EXT --> NET["puzzle_extracted.v / .json — structural netlist"]
+    NET --> SIM["simulate.py — cycle simulator, PDK models"]
+    SIM --> VCD["verify_vcd.py — golden check, 312/312 edges"]
+    NET --> Z3["solve_z3.py — bounded model check, 141 cycles"]
+    Z3 --> KEY["121-bit key — proven unique"]
+    KEY --> PROTO["run_protocol.py — feed key, stream flag"]
+    PROTO --> FLAG["(* TWO STARS *)"]
+    NET --> LVS["lvs/ — KLayout LVS extraction, independent cross-check"]
+    NET --> BRUTE["brute-structural/ — brute-force + tracing cross-check"]
+    NET --> VIEW["3d-viewer.html — interactive 3D chip viewer"]
+```
+
+## 📊 At a glance (verified 30 Oct 2026)
+
+| Measure | Value |
+|---|---|
+| Puzzle | Jane Street ASIC Reverse-Engineering Puzzle 2026 |
+| Status | Solved; nothing submitted to Jane Street or anywhere else |
+| Key | 121 bits, proven unique (Z3 blocking clause returns UNSAT) |
+| Netlist | 728 cells (636 combinational + 92 flip-flops), 741 nets that matter, 2,791 pins |
+| Geometry | 12,615 merged metal polygons, 33,323 vias, 13 top-level pads, SkyWater 130 nm |
+| Golden check | 312/312 example-VCD edges match, 0 mismatches |
+| Z3 solve | 141 cycles (3 reset + 1 gap + 121 shift + 16 stream), success = 1 at cycle 125 |
+| Flag | `(* TWO STARS *)`; easter eggs `EMPTY SKY` (all zeros), `BIG BANG` (all ones) |
+| Wrong key | Streams `TRY AGAIN`, success stays low |
+| Methods | 4 independent (extraction + simulation, Z3, KLayout LVS, brute-structural) |
+| Warmup validation | 79 instances, S = 1 exactly when A + B == 496 |
+| Published | After submissions closed 4 September 2026, as Jane Street's post allows |
